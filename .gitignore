@@ -10,3 +10,5 @@ test/*.pdf
 .DS_Store
 Thumbs.db
 test/*_files/
+# html2canvas n est plus utilise depuis la v1.1 (remplace par CDP)
+libs/html2canvas.min.js
