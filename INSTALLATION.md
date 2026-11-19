@@ -12,7 +12,6 @@ projet_webpage_to_pdf/
 ├── icons/                 # Extension icons
 ├── libs/
 │   └── jspdf.umd.min.js   # PDF assembly for the screenshot fallback
-└── test_extension.html    # Test page
 ```
 
 ## Installation

@@ -46,7 +46,6 @@ projet_webpage_to_pdf/
 ├── README.md              # Documentation
 ├── INSTALLATION.md        # Detailed instructions
 ├── CHROMEWEBSTORE.md      # Store listing info + permission justifications
-├── test_extension.html    # Test page
 ├── icons/                 # Extension icons
 │   ├── icon16.svg
 │   ├── icon32.svg
@@ -54,7 +53,6 @@ projet_webpage_to_pdf/
 │   └── icon128.svg
 ├── libs/
 │   └── jspdf.umd.min.js   # PDF assembly for the screenshot fallback
-└── test/                  # Local test page (Wikipedia snapshot)
 ```
 
 ## Technology
