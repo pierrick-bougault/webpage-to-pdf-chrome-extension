@@ -1,0 +1,11 @@
+# Captures et PDF de test (lourds)
+test/*.jpg
+test/*.jpeg
+test/*.png
+test/*.pdf
+
+# Fichiers temporaires
+*.tmp
+*.log
+.DS_Store
+Thumbs.db

@@ -1,0 +1,26 @@
+{
+  "manifest_version": 3,
+  "name": "Webpage to PDF",
+  "version": "1.3.0",
+  "description": "Export any webpage to PDF (vectoriel via CDP, fallback capture pleine page)",
+  "action": {
+    "default_icon": {
+      "16": "icons/icon16.svg",
+      "32": "icons/icon32.svg",
+      "48": "icons/icon48.svg",
+      "128": "icons/icon128.svg"
+    },
+    "default_title": "Export to PDF"
+  },
+  "permissions": ["activeTab", "scripting", "downloads", "debugger"],
+  "host_permissions": ["<all_urls>"],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "icons": {
+    "16": "icons/icon16.svg",
+    "32": "icons/icon32.svg",
+    "48": "icons/icon48.svg",
+    "128": "icons/icon128.svg"
+  }
+}
