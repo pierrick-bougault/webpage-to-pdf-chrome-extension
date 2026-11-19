@@ -147,6 +147,14 @@ async function exportTabToPDF(tab) {
     const scrollerInfo = JSON.parse(scrollerRes.result.value || '{"n":0}');
     const internalScrollers = scrollerInfo.n || 0;
 
+    // Some sites ship a @media print stylesheet that distorts the layout
+    // (e.g. LinkedIn squeezes the profile into narrow columns, other sites
+    // hide their content): the vector PDF would then be unreadable even when
+    // big enough. Emulate print media and compare the document height with
+    // the screen one — a big divergence means printToPDF output is unreliable.
+    const printCheck = await checkPrintLayout(target);
+    const printDistorted = !!printCheck && (printCheck.ratio > 1.5 || printCheck.ratio < 0.67);
+
     // 1) vector attempt
     const pdf = await chrome.debugger.sendCommand(target, 'Page.printToPDF', {
       landscape: false,
@@ -162,16 +170,49 @@ async function exportTabToPDF(tab) {
       marginRight: 0.4
     });
 
-    if (pdf.data.length >= MIN_PDF_B64_LEN && internalScrollers === 0) {
+    if (pdf.data.length >= MIN_PDF_B64_LEN && internalScrollers === 0 && !printDistorted) {
       await savePdf(tab, 'data:application/pdf;base64,' + pdf.data);
       return;
     }
 
-    // 2) content hidden at print time or internal scrolling -> full-page image capture
-    console.log(`Webpage to PDF: capture mode (PDF=${pdf.data.length} chars, scrollers=${internalScrollers}, maxScroll=${scrollerInfo.maxScroll})`);
+    // 2) content hidden/distorted at print time or internal scrolling -> full-page image capture
+    console.log(`Webpage to PDF: capture mode (PDF=${pdf.data.length} chars, scrollers=${internalScrollers}, maxScroll=${scrollerInfo.maxScroll}, printRatio=${printCheck ? printCheck.ratio.toFixed(2) : 'n/a'})`);
     await captureFullPageToPDF(target, tab);
   } finally {
     try { await chrome.debugger.detach(target); } catch (_) { /* ignore */ }
+  }
+}
+
+// Emulates print media on the page and compares the resulting document height
+// with the screen one. Returns { ratio: printH / screenH }, or null on error.
+// The emulated media is always reset to screen afterwards.
+async function checkPrintLayout(target) {
+  const measure = 'JSON.stringify({ h: document.documentElement.scrollHeight })';
+  const evalJs = async (expr, awaitPromise) => {
+    const r = await chrome.debugger.sendCommand(target, 'Runtime.evaluate', {
+      expression: expr,
+      returnByValue: true,
+      awaitPromise: !!awaitPromise
+    });
+    return JSON.parse(r.result.value);
+  };
+  try {
+    const screen = await evalJs(measure);
+    try {
+      await chrome.debugger.sendCommand(target, 'Emulation.setEmulatedMedia', { media: 'print' });
+      // two animation frames + a tick so the print stylesheet is applied and layout settles
+      await evalJs('new Promise(r => requestAnimationFrame(() => requestAnimationFrame(() => setTimeout(r, 300))))', true);
+      const pr = await evalJs(measure);
+      const ratio = pr.h / Math.max(screen.h, 1);
+      console.log(`Webpage to PDF: print/screen document height ratio = ${ratio.toFixed(2)}`);
+      return { ratio };
+    } finally {
+      await chrome.debugger.sendCommand(target, 'Emulation.setEmulatedMedia', { media: '' });
+      await evalJs('new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)))', true);
+    }
+  } catch (e) {
+    console.warn('Webpage to PDF: print layout check failed, assuming OK', e);
+    return null;
   }
 }
 
@@ -199,13 +240,24 @@ async function captureFullPageToPDF(target, tab) {
     if (!size) throw new Error('Could not read screenshot dimensions');
     console.log(`Webpage to PDF: full-page capture ${size.w}x${size.h}`);
 
+    const { jsPDF } = self.jspdf;
+    const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+    const pageW = pdf.internal.pageSize.getWidth();   // 210 mm
+    const pageH = pdf.internal.pageSize.getHeight();  // 297 mm
+
+    // Slice the capture into page-sized chunks: each chunk's height (in px) is
+    // chosen so the chunk fills the A4 page WIDTH exactly — otherwise a tall
+    // page would be shrunk onto a single page and the text would be unreadable.
+    // chunkH is always < MAX_SLICE_HEIGHT for any realistic page width.
+    const chunkH = Math.max(1, Math.min(MAX_SLICE_HEIGHT, Math.floor((size.w * pageH) / pageW)));
+
     let slices;
-    if (size.h <= MAX_SLICE_HEIGHT) {
+    if (size.h <= chunkH) {
       slices = [{ data: full.data, w: size.w, h: size.h }];
     } else {
       slices = [];
-      for (let y = 0; y < size.h; y += MAX_SLICE_HEIGHT) {
-        const height = Math.min(MAX_SLICE_HEIGHT, size.h - y);
+      for (let y = 0; y < size.h; y += chunkH) {
+        const height = Math.min(chunkH, size.h - y);
         const shot = await chrome.debugger.sendCommand(target, 'Page.captureScreenshot', {
           format: 'jpeg',
           quality: 85,
@@ -215,11 +267,6 @@ async function captureFullPageToPDF(target, tab) {
         slices.push({ data: shot.data, w: size.w, h: height });
       }
     }
-
-    const { jsPDF } = self.jspdf;
-    const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
-    const pageW = pdf.internal.pageSize.getWidth();   // 210 mm
-    const pageH = pdf.internal.pageSize.getHeight();  // 297 mm
 
     slices.forEach((s, i) => {
       if (i > 0) pdf.addPage();
