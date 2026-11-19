@@ -1,23 +1,23 @@
-// Service Worker — Exporte l'onglet actif en PDF via CDP (chrome.debugger).
+// Service Worker — Exports the active tab to PDF via CDP (chrome.debugger).
 //
-// Stratégie hybride :
-//  1. Page.printToPDF -> PDF vectoriel (texte sélectionnable). Si le résultat
-//     est anormalement petit, le site masque probablement son contenu à
-//     l'impression (ex. texte rendu transparent dans un @media print) :
-//     on bascule alors en capture d'image pleine page.
-//  2. Page.captureScreenshot pleine page (captureBeyondViewport, tranches de
-//     16000 px max a cause de la limite de texture Chrome) assemblées en PDF A4
-//     avec jsPDF. Le rendu est alors identique a l'écran (couleurs conservees).
-//  3. Dernier recours : impression native (window.print) via content.js.
+// Hybrid strategy:
+//  1. Page.printToPDF -> vector PDF (selectable text). If the result is
+//     abnormally small, the site probably hides its content at print time
+//     (e.g. text rendered transparent in a @media print rule): switch to
+//     full-page image capture.
+//  2. Page.captureScreenshot full page (captureBeyondViewport, 16000 px slices
+//     max due to Chrome's texture limit) assembled into an A4 PDF with jsPDF.
+//     The rendering is then identical to the screen (colors preserved).
+//  3. Last resort: native print (window.print) via content.js.
 
 importScripts('libs/jspdf.umd.min.js');
 
 const RESTRICTED_PREFIXES = ['chrome://', 'chrome-extension://', 'edge://', 'devtools://', 'about:', 'view-source:'];
-const MIN_PDF_B64_LEN = 40000;  // en dessous, le PDF vectoriel est probablement vide
-const MAX_SLICE_HEIGHT = 16000; // limite de texture GPU de Chrome pour captureScreenshot
+const MIN_PDF_B64_LEN = 40000;  // below this, the vector PDF is probably empty
+const MAX_SLICE_HEIGHT = 16000; // Chrome GPU texture limit for captureScreenshot
 
-// Chauffe les conteneurs a scroll interne (declenche le lazy-load, ex. liste
-// Gmail chargee au scroll), remonte en haut, puis les compte avec leur hauteur.
+// Warms up internal scroll containers (triggers lazy-loading, e.g. the Gmail
+// list loaded on scroll), scrolls back to top, then counts them and their height.
 const SCROLLER_WARMUP = `(async () => {
   const sleep = (ms) => new Promise(r => setTimeout(r, ms));
   const findScrollers = () => {
@@ -28,7 +28,7 @@ const SCROLLER_WARMUP = `(async () => {
     });
     return els;
   };
-  // on ne chauffe que les 3 plus gros scrollers (evite les timeouts)
+  // only warm the 3 biggest scrollers (avoids timeouts)
   const top = findScrollers().sort((a, b) => b.scrollHeight - a.scrollHeight).slice(0, 3);
   for (const el of top) {
     const step = Math.max(el.clientHeight, 200);
@@ -42,12 +42,12 @@ const SCROLLER_WARMUP = `(async () => {
   return JSON.stringify({ n: els.length, maxScroll, docH: document.documentElement.scrollHeight });
 })()`;
 
-// Deplie les conteneurs a scroll interne (Gmail, X, etc.) ET toute leur chaîne
-// d'ancêtres (layouts en 100vh / overflow hidden), avec !important pour
-// battre les classes du site. Styles inline sauvegardes dans window.__pdfSaved.
+// Unfolds internal scroll containers (Gmail, X, etc.) AND their whole ancestor
+// chain (100vh / overflow:hidden layouts), with !important to beat the site's
+// classes. Inline styles are saved in window.__pdfSaved.
 const UNFOLD_SCRIPT = `(async () => {
   const sleep = (ms) => new Promise(r => setTimeout(r, ms));
-  // idempotent : restaure d'abord un eventuel depliage precedent
+  // idempotent: restore any previous unfold first
   (window.__pdfSaved || []).forEach(s => { s.el.style.cssText = s.cssText; });
   window.__pdfSaved = [];
   const save = (el) => {
@@ -73,14 +73,14 @@ const UNFOLD_SCRIPT = `(async () => {
   return JSON.stringify({ n: window.__pdfSaved.length, docH: document.documentElement.scrollHeight });
 })()`;
 
-// Restaure les styles inline apres la capture
+// Restores inline styles after the capture
 const REFOLD_SCRIPT = `(() => {
   (window.__pdfSaved || []).forEach(s => { s.el.style.cssText = s.cssText; });
   window.__pdfSaved = null;
   return 'ok';
 })()`;
 
-let busy = false; // evite les doubles clics concurrents (un seul debugger par onglet)
+let busy = false; // prevents concurrent double clicks (one debugger per tab)
 
 chrome.action.onClicked.addListener(async (tab) => {
   if (!tab || tab.id == null || busy) return;
@@ -98,25 +98,25 @@ async function handleClick(tab) {
   if (!isRestrictedPage) {
     try {
       await exportTabToPDF(tab);
-      console.log('Webpage to PDF: export termine');
+      console.log('Webpage to PDF: export done');
       return;
     } catch (err) {
-      // ex: DevTools deja ouvert sur l'onglet ("Another debugger is already attached")
-      console.warn('Webpage to PDF: export CDP a echoue, fallback impression native.', err);
-      try { await chrome.debugger.detach({ tabId: tab.id }); } catch (_) { /* deja detache */ }
+      // e.g. DevTools already open on the tab ("Another debugger is already attached")
+      console.warn('Webpage to PDF: CDP export failed, falling back to native print.', err);
+      try { await chrome.debugger.detach({ tabId: tab.id }); } catch (_) { /* already detached */ }
     }
   } else {
-    // Pages internes Chrome (chrome://, Web Store...) : aucune extension n'y a acces
-    console.info('Webpage to PDF: les pages internes Chrome (chrome://, etc.) ne peuvent pas etre exportees. Utilisez un onglet web normal.');
+    // Internal Chrome pages (chrome://, Web Store...): no extension can access them
+    console.info('Webpage to PDF: internal Chrome pages (chrome://, etc.) cannot be exported. Use a normal web tab.');
     return;
   }
 
-  // Fallback : boite de dialogue d'impression native (Ctrl+P -> "Enregistrer au format PDF")
+  // Fallback: native print dialog (Ctrl+P -> "Save as PDF")
   try {
     await chrome.scripting.executeScript({ target: { tabId: tab.id }, files: ['content.js'] });
     await chrome.tabs.sendMessage(tab.id, { action: 'fallbackPrint' });
   } catch (err) {
-    console.error('Webpage to PDF: fallback impossible sur cette page.', err);
+    console.error('Webpage to PDF: fallback not possible on this page.', err);
   }
 }
 
@@ -128,8 +128,8 @@ async function exportTabToPDF(tab) {
     await chrome.debugger.sendCommand(target, 'Page.enable');
     await waitForPageReady(target);
 
-    // Les conteneurs a scroll interne (Gmail, X...) ne sont ni pagines par
-    // printToPDF ni capturable au-dela du viewport : il faut le mode capture.
+    // Internal scroll containers (Gmail, X...) are neither paginated by
+    // printToPDF nor capturable beyond the viewport: capture mode is required.
     const scrollerRes = await chrome.debugger.sendCommand(target, 'Runtime.evaluate', {
       expression: SCROLLER_WARMUP,
       returnByValue: true,
@@ -138,14 +138,14 @@ async function exportTabToPDF(tab) {
     const scrollerInfo = JSON.parse(scrollerRes.result.value || '{"n":0}');
     const internalScrollers = scrollerInfo.n || 0;
 
-    // 1) tentative vectorielle
+    // 1) vector attempt
     const pdf = await chrome.debugger.sendCommand(target, 'Page.printToPDF', {
       landscape: false,
-      printBackground: true,      // conserve les fonds colores
-      preferCSSPageSize: true,    // respecte @page { size: ... } de la page
+      printBackground: true,      // keep colored backgrounds
+      preferCSSPageSize: true,    // honor the page's @page { size: ... }
       displayHeaderFooter: false,
       scale: 1,
-      paperWidth: 8.27,           // A4 en pouces
+      paperWidth: 8.27,           // A4 in inches
       paperHeight: 11.69,
       marginTop: 0.4,
       marginBottom: 0.4,
@@ -158,22 +158,22 @@ async function exportTabToPDF(tab) {
       return;
     }
 
-    // 2) contenu masque a l'impression ou scroll interne -> capture pleine page en image
-    console.log(`Webpage to PDF: mode capture (PDF=${pdf.data.length} car., scrollers=${internalScrollers}, maxScroll=${scrollerInfo.maxScroll})`);
+    // 2) content hidden at print time or internal scrolling -> full-page image capture
+    console.log(`Webpage to PDF: capture mode (PDF=${pdf.data.length} chars, scrollers=${internalScrollers}, maxScroll=${scrollerInfo.maxScroll})`);
     await captureFullPageToPDF(target, tab);
   } finally {
     try { await chrome.debugger.detach(target); } catch (_) { /* ignore */ }
   }
 }
 
-// Capture la page entiere en JPEG et assemble un PDF A4 avec jsPDF.
-// On ne fait confiance ni au scrollHeight (peut etre gonfle artificiellement)
-// : on capture d'abord toute la page sans clip (captureBeyondViewport laisse
-// Chrome calculer la hauteur reelle), on lit les vraies dimensions dans
-// l'en-tete JPEG, puis on decoupe en tranches uniquement si > 16384 px.
+// Captures the whole page as JPEG and assembles an A4 PDF with jsPDF.
+// We don't trust scrollHeight (it can be artificially inflated): first capture
+// the whole page without a clip (captureBeyondViewport lets Chrome compute the
+// real height), read the true dimensions from the JPEG header, then slice only
+// if > 16384 px.
 async function captureFullPageToPDF(target, tab) {
-  // Deplier d'abord les conteneurs a scroll interne (sinon la capture s'arrete
-  // au viewport, ex. liste Gmail) ; on restaure les styles dans le finally.
+  // Unfold internal scroll containers first (otherwise the capture stops at the
+  // viewport, e.g. the Gmail list); styles are restored in the finally block.
   await chrome.debugger.sendCommand(target, 'Runtime.evaluate', {
     expression: UNFOLD_SCRIPT,
     returnByValue: true,
@@ -187,8 +187,8 @@ async function captureFullPageToPDF(target, tab) {
       captureBeyondViewport: true
     });
     const size = jpegSize(full.data);
-    if (!size) throw new Error('Impossible de lire les dimensions du screenshot');
-    console.log(`Webpage to PDF: capture pleine page ${size.w}x${size.h}`);
+    if (!size) throw new Error('Could not read screenshot dimensions');
+    console.log(`Webpage to PDF: full-page capture ${size.w}x${size.h}`);
 
     let slices;
     if (size.h <= MAX_SLICE_HEIGHT) {
@@ -222,7 +222,7 @@ async function captureFullPageToPDF(target, tab) {
 
     await savePdf(tab, pdf.output('datauristring'));
   } finally {
-    // restaure les conteneurs a scroll interne deplies
+    // restore the unfolded scroll containers
     try {
       await chrome.debugger.sendCommand(target, 'Runtime.evaluate', { expression: REFOLD_SCRIPT });
     } catch (_) { /* ignore */ }
@@ -234,8 +234,8 @@ async function savePdf(tab, dataUrl) {
   try {
     await chrome.downloads.download({ url: dataUrl, filename, saveAs: false });
   } catch (e) {
-    // data: URL rejetee (trop grosse) -> telechargement via Blob cote page
-    console.warn('Webpage to PDF: data URL refusee, fallback Blob via content script', e);
+    // data: URL rejected (too large) -> download via a page-side Blob
+    console.warn('Webpage to PDF: data URL rejected, Blob fallback via content script', e);
     const b64 = dataUrl.slice(dataUrl.indexOf(',') + 1);
     await chrome.scripting.executeScript({ target: { tabId: tab.id }, files: ['content.js'] });
     const res = await chrome.tabs.sendMessage(tab.id, { action: 'savePDF', b64, filename });
@@ -243,7 +243,7 @@ async function savePdf(tab, dataUrl) {
   }
 }
 
-// Lit la largeur/hauteur reelles d'un JPEG encode en base64 (marqueur SOF)
+// Reads the real width/height of a base64-encoded JPEG (SOF marker)
 function jpegSize(b64) {
   try {
     const buf = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
@@ -251,7 +251,7 @@ function jpegSize(b64) {
     while (i + 9 < buf.length) {
       if (buf[i] !== 0xff) { i++; continue; }
       const marker = buf[i + 1];
-      // SOF0..SOF15 (sauf DHT/DAC/JPG) contiennent les dimensions
+      // SOF0..SOF15 (except DHT/DAC/JPG) hold the dimensions
       if (marker >= 0xc0 && marker <= 0xcf && marker !== 0xc4 && marker !== 0xc8 && marker !== 0xcc) {
         return { h: (buf[i + 5] << 8) | buf[i + 6], w: (buf[i + 7] << 8) | buf[i + 8] };
       }
@@ -262,7 +262,7 @@ function jpegSize(b64) {
   return null;
 }
 
-// Attend que document.readyState === 'complete' (images, polices, etc.)
+// Waits for document.readyState === 'complete' (images, fonts, etc.)
 async function waitForPageReady(target, timeoutMs = 10000) {
   const start = Date.now();
   while (Date.now() - start < timeoutMs) {
@@ -272,12 +272,12 @@ async function waitForPageReady(target, timeoutMs = 10000) {
         returnByValue: true
       });
       if (result && result.value === 'complete') return;
-    } catch (_) { /* la page ne repond pas encore, on reessaie */ }
+    } catch (_) { /* page not responding yet, retry */ }
     await new Promise((r) => setTimeout(r, 200));
   }
 }
 
-// Log si l'utilisateur ferme la banniere de debogage pendant l'operation
+// Logged if the user closes the debugging banner during the operation
 chrome.debugger.onDetach.addListener((source, reason) => {
-  console.log('Webpage to PDF: debugger detache', JSON.stringify(source), reason);
+  console.log('Webpage to PDF: debugger detached', JSON.stringify(source), reason);
 });

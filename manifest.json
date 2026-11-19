@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "Webpage to PDF",
   "version": "1.3.0",
-  "description": "Export any webpage to PDF (vectoriel via CDP, fallback capture pleine page)",
+  "description": "Export any webpage to a full-page PDF (vector via CDP, full-page screenshot fallback)",
   "action": {
     "default_icon": {
       "16": "icons/icon16.svg",

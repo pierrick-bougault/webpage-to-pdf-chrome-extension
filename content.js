@@ -1,8 +1,8 @@
-// Content script — deux rôles, chacun avec un guard anti double injection :
-//  1. savePDF : recoit le PDF (base64) du service worker et le telecharge
-//     depuis la page via un Blob + <a download> (fallback quand la data: URL
-//     est trop grosse pour chrome.downloads).
-//  2. fallbackPrint : impression native (Ctrl+P -> "Enregistrer au format PDF").
+// Content script — two roles, each guarded against double injection:
+//  1. savePDF: receives the PDF (base64) from the service worker and downloads
+//     it from the page via a Blob + <a download> (fallback when the data: URL
+//     is too large for chrome.downloads).
+//  2. fallbackPrint: native print dialog (Ctrl+P -> "Save as PDF").
 
 if (!window.__webpageToPdfListener) {
   window.__webpageToPdfListener = true;

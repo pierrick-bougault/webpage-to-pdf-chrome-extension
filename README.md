@@ -1,101 +1,103 @@
-# Extension Chrome : Webpage to PDF
+# Chrome Extension: Webpage to PDF
 
-> Une extension simple pour exporter n'importe quelle page web en PDF (capture complète)
+> A simple extension to export any webpage to a full-page PDF with one click.
 
 ## Description
 
-Cette extension Chrome permet de capturer **toute la page web** (y compris le contenu qui nécessite un défilement) et de l'exporter en format PDF avec une seule action.
+This Chrome extension captures **the entire webpage** (including content that
+requires scrolling, and content hidden inside internal scroll containers such as
+Gmail) and exports it as a PDF with a single action.
 
-## Caractéristiques
+## Features
 
-- Capture complète de la page (pagination automatique, hauteur illimitée)
-- **PDF vectoriel** rendu par Chrome lui-même : texte sélectionnable, liens cliquables
-- Conservation exacte des styles CSS (couleurs modernes `lab()`/`oklch()` incluses — plus d'erreur html2canvas)
-- Téléchargement automatique du fichier
-- Icône visible dans la barre d'outils
-- Fallback sur l'impression native (`Ctrl+P` → Enregistrer en PDF) si le débogage CDP est indisponible
+- Full-page capture (unlimited height, internal scrollers unfolded automatically)
+- **Vector PDF** rendered by Chrome itself: selectable text, clickable links
+- Exact CSS rendering, including modern color functions (`lab()`/`oklch()`)
+- Automatic file download
+- Fallback to a **full-page screenshot PDF** when a site hides its content at
+  print time (e.g. transparent text in `@media print`) or uses internal scrolling
+- Toolbar icon
+- Native-print fallback (`Ctrl+P` → Save as PDF) if CDP debugging is unavailable
 
 ## Installation
 
-### Méthode Rapide (Développement)
+### Quick method (development)
 
-1. Ouvrez Chrome et allez sur : **`chrome://extensions/`**
-2. Activez le **mode développeur** (bouton en haut à droite)
-3. Cliquez sur **"Charger l'extension non empaquetée"**
-4. Sélectionnez le dossier **`projet_webpage_to_pdf`**
+1. Open Chrome and go to **`chrome://extensions/`**
+2. Enable **Developer mode** (toggle at the top right)
+3. Click **"Load unpacked"**
+4. Select the **`projet_webpage_to_pdf`** folder
 
-✅ L'extension est prête à l'emploi !
+✅ The extension is ready to use!
 
-## Utilisation
+## Usage
 
-1. Naviguez vers n'importe quelle page web
-2. Cliquez sur l'icône de l'extension dans la barre d'outils
-3. Le PDF sera généré et téléchargé automatiquement
+1. Browse to any webpage
+2. Click the extension icon in the toolbar
+3. The PDF is generated and downloaded automatically
 
-## Structure du Projet
+## Project structure
 
 ```
 projet_webpage_to_pdf/
-├── manifest.json          # Configuration de l'extension (permission "debugger")
-├── background.js          # Service Worker : Page.printToPDF via chrome.debugger (CDP)
-├── content.js             # Fallback : impression native (window.print)
+├── manifest.json          # Extension config (debugger permission)
+├── background.js          # Service worker: Page.printToPDF / captureScreenshot via chrome.debugger (CDP)
+├── content.js             # Fallbacks: Blob download + native print
 ├── README.md              # Documentation
-├── INSTALLATION.md        # Instructions détaillées
-├── test_extension.html    # Page de test
-├── icons/                 # Icônes de l'extension
+├── INSTALLATION.md        # Detailed instructions
+├── CHROMEWEBSTORE.md      # Store listing info + permission justifications
+├── test_extension.html    # Test page
+├── icons/                 # Extension icons
 │   ├── icon16.svg
 │   ├── icon32.svg
 │   ├── icon48.svg
 │   └── icon128.svg
-└── libs/                  # Anciennes libs (html2canvas/jsPDF) — plus utilisées
+├── libs/
+│   └── jspdf.umd.min.js   # PDF assembly for the screenshot fallback
+└── test/                  # Local test page (Wikipedia snapshot)
 ```
 
-## Technologie
+## Technology
 
-- **Manifest V3** : Compatible avec les dernières versions de Chrome
-- **chrome.debugger + Page.printToPDF** : PDF vectoriel produit par le moteur Chrome
-  (pas de capture DOM en JS, donc aucun problème avec les CSS modernes type `lab()`)
-- **Fallback capture pleine page** : si le site masque son contenu à l'impression
-  (ex. texte transparent en `@media print`, comme higgsfield.ai — détecté via un
-  PDF anormalement petit) **ou** utilise un scroll interne (Gmail, X… — détecté
-  en sondant les conteneurs `overflow: auto/scroll` après les avoir scrollés
-  pour déclencher le lazy-load), l'extension bascule sur
-  `Page.captureScreenshot` pleine page (`captureBeyondViewport`, tranches de
-  16 000 px max) assemblées en PDF A4 avec jsPDF. Avant la capture, tous les
-  conteneurs à scroll interne **et leurs ancêtres** sont dépliés
-  (`height/max-height/min-height/overflow` en `!important`), puis restaurés
-  après : la page entière est capturée, plus seulement le viewport.
-- **Service Worker** : Gestion des événements en arrière-plan
+- **Manifest V3**
+- **chrome.debugger + Page.printToPDF**: the PDF is produced by Chrome's own
+  rendering engine (no DOM scraping in JS), so modern CSS never breaks it
+- **Fallback full-page capture**: if the site hides its content at print time
+  (detected via an abnormally small PDF) **or** uses an internal scroll container
+  (detected by probing `overflow: auto/scroll` elements after scrolling them to
+  trigger lazy-loading), the extension switches to `Page.captureScreenshot`
+  full-page (`captureBeyondViewport`, 16,000 px slices max) assembled into an
+  A4 PDF with jsPDF. Before capturing, every internal scroller **and its
+  ancestors** are unfolded (`height/max-height/min-height/overflow` with
+  `!important`), then restored afterwards.
+- **Service worker**: background event handling
 
-## Personnalisation
+## Customization
 
-Les paramètres du PDF se règlent dans `background.js`, dans l'appel à `Page.printToPDF` :
+PDF settings live in `background.js`, in the `Page.printToPDF` call inside
+`exportTabToPDF()`:
 
-- **Format de papier** : `paperWidth` / `paperHeight` (en pouces, A4 = 8.27 × 11.69)
-- **Orientation** : `landscape: true`
-- **Marges** : `marginTop` / `marginBottom` / `marginLeft` / `marginRight`
-- **Fonds colorés** : `printBackground: true`
-- **Nom du fichier** : pattern `webpage_${title}.pdf` dans `exportTabToPDF()`
+- **Paper size**: `paperWidth` / `paperHeight` (in inches; A4 = 8.27 × 11.69)
+- **Orientation**: `landscape: true`
+- **Margins**: `marginTop` / `marginBottom` / `marginLeft` / `marginRight`
+- **Background colors**: `printBackground: true`
+- **Capture quality**: `quality` in the `Page.captureScreenshot` calls
+- **File name**: the `webpage_${title}.pdf` pattern in `savePdf()`
 
-## Limitations
+## Known limitations
 
-- Une bannière « débogage » Chrome apparaît brièvement sur l'onglet pendant la génération
-- Si DevTools est déjà ouvert sur l'onglet, l'extension bascule sur l'impression native
-- Les pages `chrome://` / Web Store ne sont pas exportables (restriction Chrome) : impression native utilisée
+- A short "debugging" banner appears on the tab during generation (unavoidable
+  with the `debugger` API)
+- If DevTools is already open on the tab, the extension falls back to native print
+- `chrome://` pages and the Web Store cannot be exported (Chrome restriction)
+- Very long pages are sliced at 16,384 px per capture (Chrome texture limit)
+- In screenshot mode the PDF is an image (text not selectable) — the vector
+  mode is preferred whenever possible
 
-## Prochaines Améliorations
+## License
 
-- [ ] Interface de configuration (qualité, format, etc.)
-- [ ] Sélection de la zone à capturer
-- [ ] Support des pages nécessitant une authentification
-- [ ] Optimisation pour les pages très longues (> 10000px)
-
-## Licence
-
-Ce projet est libre d'utilisation. Les bibliothèques utilisées (html2canvas, jsPDF) sont sous licence MIT.
+Free to use. jsPDF is MIT-licensed.
 
 ---
 
-**Créé par** : Vibe CLI Agent
-**Version** : 1.0.0
-**Date** : 2024
+**Version**: 1.3.0

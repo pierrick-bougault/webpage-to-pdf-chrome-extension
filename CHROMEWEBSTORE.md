@@ -1,21 +1,21 @@
-# Chrome Web Store — Informations de publication
+# Chrome Web Store — Listing Information
 
-## Permissions demandées et justifications
+## Requested permissions and justifications
 
 | Permission | Justification |
 |---|---|
-| `activeTab` | Nécessaire pour cibler l'onglet actif au clic sur l'icône et y lire la page à exporter. Aucun accès en dehors du clic utilisateur. |
-| `debugger` | Utilisée via `chrome.debugger` pour appeler `Page.printToPDF` / `Page.captureScreenshot` (protocole DevTools) sur l'onglet actif, afin de produire un PDF fidèle de la page (texte vectoriel sélectionnable, pleine page). Aucun envoi de données hors du navigateur ; le debugger est détaché immédiatement après l'export. |
-| `scripting` | Pour injecter `content.js` dans l'onglet actif uniquement en fallback (téléchargement du PDF via Blob, ou impression native `window.print()`). |
-| `downloads` | Pour enregistrer le PDF généré dans le dossier de téléchargements de l'utilisateur. |
-| `host_permissions: <all_urls>` | Requis pour que `chrome.debugger` puisse s'attacher à n'importe quel onglet web au clic de l'utilisateur. Aucun accès réseau, aucune collecte de données. |
+| `activeTab` | Needed to target the active tab when the toolbar icon is clicked and read the page to export. No access outside the user's click. |
+| `debugger` | Used via `chrome.debugger` to call `Page.printToPDF` / `Page.captureScreenshot` (DevTools protocol) on the active tab, producing a faithful PDF of the page (selectable vector text, full page). No data is sent outside the browser; the debugger is detached immediately after the export. |
+| `scripting` | To inject `content.js` into the active tab only as a fallback (PDF download via Blob, or native `window.print()`). |
+| `downloads` | To save the generated PDF to the user's download folder. |
+| `host_permissions: <all_urls>` | Required so `chrome.debugger` can attach to any web tab when the user clicks. No network access, no data collection. |
 
-## Confidentialité
+## Privacy
 
-- Aucune donnée utilisateur n'est collectée, transmise ou vendue.
-- Le contenu des pages n'est jamais envoyé ailleurs qu'au moteur de rendu local de Chrome.
-- Aucun compte, aucune authentification, aucun suivi.
+- No user data is collected, transmitted, or sold.
+- Page content never leaves the local Chrome rendering engine.
+- No accounts, no authentication, no tracking.
 
-## Description courte (listing)
+## Short description (listing)
 
-Exporte n'importe quelle page web en PDF pleine page d'un clic : rendu fidèle par le moteur Chrome (couleurs, mise en page), PDF vectoriel quand c'est possible, sinon capture pleine page de haute qualité. Fonctionne aussi sur les sites à scroll interne (Gmail…) et ceux qui masquent leur contenu à l'impression.
+Export any webpage to a full-page PDF in one click: faithful rendering by the Chrome engine (colors, layout), vector PDF when possible, otherwise a high-quality full-page capture. Also works on internal-scroller sites (Gmail…) and sites that hide their content at print time.

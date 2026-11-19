@@ -1,91 +1,94 @@
-# Extension Chrome : Webpage to PDF
+# Chrome Extension: Webpage to PDF
 
-Une extension pour exporter n'importe quelle page web en PDF (capture complète de la page).
+An extension to export any webpage to a full-page PDF.
 
-## Structure du Projet
+## Project structure
 
+```
 projet_webpage_to_pdf/
-├── manifest.json          # Configuration de l'extension
-├── background.js          # Service Worker (gestion des événements)
-├── content.js             # Script de capture et génération PDF
-├── icons/                 # Icônes de l'extension
-│   ├── icon16.svg
-│   ├── icon32.svg
-│   ├── icon48.svg
-│   └── icon128.svg
-├── libs/                  # Bibliothèques externes
-│   ├── html2canvas.min.js # Pour capturer le DOM en image
-│   └── jspdf.umd.min.js   # Pour générer le PDF
-└── test_extension.html    # Page de test
+├── manifest.json          # Extension config (debugger permission)
+├── background.js          # Service worker: Page.printToPDF via chrome.debugger (CDP)
+├── content.js             # Fallbacks: Blob download + native print
+├── icons/                 # Extension icons
+├── libs/
+│   └── jspdf.umd.min.js   # PDF assembly for the screenshot fallback
+└── test_extension.html    # Test page
+```
 
 ## Installation
 
-### Methode 1 : Chargement en mode développement
+### Method 1: Load in development mode
 
-1. Ouvrir Chrome et aller à l'adresse :
-   chrome://extensions/
+1. Open Chrome and go to:
+   `chrome://extensions/`
 
-2. Activer le mode développeur (bouton en haut à droite)
+2. Enable **Developer mode** (toggle at the top right)
 
-3. Charger l'extension :
-   - Cliquez sur "Charger l'extension non empaquetée"
-   - Sélectionnez le dossier projet_webpage_to_pdf
+3. Load the extension:
+   - Click **"Load unpacked"**
+   - Select the `projet_webpage_to_pdf` folder
 
-4. L'extension est installée !
-   - Une nouvelle icône apparaîtra dans la barre d'outils de Chrome
+4. The extension is installed!
+   - A new icon appears in the Chrome toolbar
 
-### Methode 2 : Empaquetage pour distribution
+### Method 2: Package for distribution
 
-1. Dans chrome://extensions/, activez le mode développeur
-2. Cliquez sur "Empaquer l'extension"
-3. Sélectionnez le dossier du projet
-4. Chrome générera un fichier .crx et .pem
+1. In `chrome://extensions/`, enable Developer mode
+2. Click **"Pack extension"**
+3. Select the project folder
+4. Chrome generates a `.crx` and a `.pem` file
 
-## Utilisation
+## Usage
 
-### Exporter une page en PDF :
+### Export a page to PDF:
 
-1. Naviguez vers la page web que vous voulez exporter
-2. Cliquez sur l'icône de l'extension dans la barre d'outils
-3. Le PDF sera généré et téléchargé automatiquement
+1. Browse to the page you want to export
+2. Click the extension icon in the toolbar
+3. The PDF is generated and downloaded automatically
 
-### Le PDF inclut :
-- Tout le contenu visible de la page
-- Les images et styles CSS
-- Les tableaux et mise en page
-- Le contenu qui nécessite un défilement
+### The PDF includes:
+- All visible page content
+- Images and CSS styles
+- Tables and layout
+- Content that requires scrolling (internal scrollers are unfolded first)
 
-## Fonctionnement Technique
+## Technical overview
 
-### Processus d'export :
+### Export pipeline:
 
-1. background.js écoute le clic sur l'icône
-2. Il attache le débogueur CDP à l'onglet actif (permission `debugger`)
-3. Il appelle `Page.printToPDF` : **Chrome rend lui-même la page en PDF**
-   (pleine page, PDF vectoriel, aucune lib de capture côté page)
-4. Le PDF (base64) est téléchargé automatiquement via `chrome.downloads`
+1. `background.js` listens for the toolbar click
+2. It attaches the CDP debugger to the active tab (permission `debugger`)
+3. It calls `Page.printToPDF`: **Chrome itself renders the page to PDF**
+   (full page, vector text, no page-side capture library)
+4. If the result is abnormally small (site hides content at print time) or the
+   page has internal scroll containers, it falls back to full-page
+   `Page.captureScreenshot` slices assembled with jsPDF
+5. The PDF (base64) is downloaded via `chrome.downloads`
 
-Pourquoi ce changement : html2canvas plante sur les sites modernes (ex: Gmail)
-avec `Attempting to parse an unsupported color function "lab"`, car il ne
-connaît pas les couleurs CSS `lab()`/`oklch()`. `Page.printToPDF` ne parse
-aucun CSS en JS : le rendu est identique à l'aperçu avant impression.
+Why this design: html2canvas crashes on modern sites (e.g. Gmail) with
+`Attempting to parse an unsupported color function "lab"`, because it does not
+know CSS `lab()`/`oklch()` colors. `Page.printToPDF` parses no CSS in JS: the
+rendering is identical to the print preview.
 
-### Fallback :
-Si le débogage CDP est indisponible (DevTools déjà ouvert, page `chrome://`),
-l'extension injecte content.js qui ouvre l'impression native (window.print()).
+### Fallbacks:
 
-## Personnalisation
+If CDP debugging is unavailable (DevTools already open, `chrome://` page),
+the extension injects `content.js`, which opens native print (`window.print()`)
+or downloads the PDF through a page-side Blob.
 
-### Modifier le nom du fichier PDF, le format, les marges :
-Dans background.js, voir l'appel à `Page.printToPDF` dans `exportTabToPDF()`
-(paperWidth/paperHeight, landscape, margins, printBackground).
+## Customization
+
+### Change the PDF file name, paper size, margins:
+
+In `background.js`, see the `Page.printToPDF` call in `exportTabToPDF()`
+(`paperWidth`/`paperHeight`, `landscape`, margins, `printBackground`).
 
 ## Notes
 
-- Limitations : Certaines pages avec du contenu dynamique peuvent ne pas être capturées parfaitement.
-- Permissions : L'extension nécessite l'accès à la page active pour fonctionner.
-- Compatibilité : Fonctionne avec Chrome 90+ (Manifest V3)
+- Limitations: some highly dynamic pages may render differently in the screenshot fallback.
+- Permissions: the extension only accesses the active tab when clicked.
+- Compatibility: Chrome 90+ (Manifest V3); CDP auto-connect features need Chrome 144+.
 
-## Licence
+## License
 
-Ce projet est libre d'utilisation. Les bibliothèques utilisées ont leurs propres licences (MIT).
+Free to use. Bundled libraries have their own licenses (MIT).
