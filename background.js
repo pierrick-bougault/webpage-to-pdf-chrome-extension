@@ -42,9 +42,11 @@ const SCROLLER_WARMUP = `(async () => {
   return JSON.stringify({ n: els.length, maxScroll, docH: document.documentElement.scrollHeight });
 })()`;
 
-// Unfolds internal scroll containers (Gmail, X, etc.) AND their whole ancestor
-// chain (100vh / overflow:hidden layouts), with !important to beat the site's
-// classes. Inline styles are saved in window.__pdfSaved.
+// Unfolds REAL internal scroll containers (overflow auto/scroll only — hidden
+// blocks like "show more" truncated text must NOT be unfolded) AND their
+// ancestor chain, with !important. Height is set to a FIXED px value
+// (scrollHeight), not auto, so absolutely-positioned columns keep their
+// reference height and don't overlap. Inline styles saved in window.__pdfSaved.
 const UNFOLD_SCRIPT = `(async () => {
   const sleep = (ms) => new Promise(r => setTimeout(r, ms));
   // idempotent: restore any previous unfold first
@@ -55,17 +57,24 @@ const UNFOLD_SCRIPT = `(async () => {
   };
   const unfoldEl = (el) => {
     save(el);
-    el.style.setProperty('height', 'auto', 'important');
+    const h = Math.max(Math.ceil(el.getBoundingClientRect().height), el.scrollHeight);
+    el.style.setProperty('height', h + 'px', 'important');
     el.style.setProperty('max-height', 'none', 'important');
-    el.style.setProperty('min-height', '0', 'important');
     el.style.setProperty('overflow', 'visible', 'important');
   };
-  document.querySelectorAll('*').forEach(el => {
-    const cs = getComputedStyle(el);
-    if ((cs.overflowY === 'auto' || cs.overflowY === 'scroll' || cs.overflowY === 'hidden' || cs.overflow === 'hidden') && el.scrollHeight > el.clientHeight + 50) {
-      let node = el;
-      while (node && node !== document.documentElement) { unfoldEl(node); node = node.parentElement; }
-    }
+  const findScrollers = () => {
+    const els = [];
+    document.querySelectorAll('*').forEach(el => {
+      const cs = getComputedStyle(el);
+      if ((cs.overflowY === 'auto' || cs.overflowY === 'scroll') && el.scrollHeight > el.clientHeight + 50) els.push(el);
+    });
+    return els;
+  };
+  const sc = findScrollers();
+  sc.forEach(el => unfoldEl(el)); // pass 1: the scrollers themselves
+  sc.forEach(el => {              // pass 2: their ancestors
+    let n = el.parentElement;
+    while (n && n !== document.documentElement) { unfoldEl(n); n = n.parentElement; }
   });
   unfoldEl(document.body);
   unfoldEl(document.documentElement);
